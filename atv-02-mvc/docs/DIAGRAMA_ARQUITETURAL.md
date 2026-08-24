@@ -65,12 +65,12 @@ graph TD
     ViewAdd -->|"9b. Resposta HTTP (HTML renderizado)"| Client
 
     %% Estilos visuais
-    classDef clientStyle fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
-    classDef routerStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
-    classDef controllerStyle fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
-    classDef modelStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
-    classDef viewStyle fill:#fffde7,stroke:#fbc02d,stroke-width:2px;
-    classDef dbStyle fill:#ede7f6,stroke:#512da8,stroke-width:2px;
+    classDef clientStyle fill:#0288d1,stroke:#ffffff,stroke-width:2px,color:#ffffff;
+    classDef routerStyle fill:#f57c00,stroke:#ffffff,stroke-width:2px,color:#ffffff;
+    classDef controllerStyle fill:#2e7d32,stroke:#ffffff,stroke-width:2px,color:#ffffff;
+    classDef modelStyle fill:#6a1b9a,stroke:#ffffff,stroke-width:2px,color:#ffffff;
+    classDef viewStyle fill:#fbc02d,stroke:#000000,stroke-width:2px,color:#000000;
+    classDef dbStyle fill:#4527a0,stroke:#ffffff,stroke-width:2px,color:#ffffff;
 
     class Client clientStyle;
     class App routerStyle;
