@@ -1,0 +1,46 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: pagamento-service
+  datasource:
+    # Valores padrão para execução local; no Docker Compose são sobrescritos
+    # pelas variáveis SPRING_DATASOURCE_*.
+    url: jdbc:postgresql://localhost:5434/pagamento
+    username: pagamento
+    password: pagamento
+  jpa:
+    hibernate:
+      ddl-auto: none        # o esquema é criado pelo schema.sql (modelo do enunciado)
+    open-in-view: false
+  sql:
+    init:
+      mode: always
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        prefetch: 1                       # distribuição justa entre instâncias (Etapa 10)
+        default-requeue-rejected: false   # após as tentativas, a mensagem vai para a DLQ
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000ms
+
+pagamento:
+  # Taxa de aprovação do sorteio (enunciado: ~80% aprovado / ~20% rejeitado)
+  taxa-aprovacao: ${PAGAMENTO_TAXA_APROVACAO:0.8}
+  # Tempo artificial de processamento, para tornar visível a distribuição entre instâncias
+  tempo-processamento-ms: ${PAGAMENTO_TEMPO_PROCESSAMENTO_MS:500}
+  simulacao:
+    # Investigação de incidente (Etapa 11): o pedido com este id falha no processamento.
+    # Vazio = desabilitado.
+    falhar-pedido-id: ${SIMULACAO_FALHA_PEDIDO_ID:}
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [${spring.application.name}@${HOSTNAME:-local}] %logger{20} - %msg%n"
