@@ -4,13 +4,12 @@
 
 **Dupla**
 
-| Papel | Nome |
+| Nome | Matrícula |
 |---|---|
-| Aluno A, responsável inicial pelo Pedido Service | _preencher_ |
-| Aluno B, responsável inicial pelo Estoque Service | _preencher_ |
+| Lucas Moreira Igleisas | 202400421 |
+| Libna Raffaely de Jesus Costa | 202302617 |
 
-As evidências textuais deste relatório são saídas reais de execuções do sistema. Os ids de
-correlação e os horários mudam a cada execução.
+As evidências textuais deste relatório são saídas reais de execuções do sistema. Os ids de correlação e os horários mudam a cada execução.
 
 ---
 
@@ -118,8 +117,6 @@ O enunciado permite modificações para cobrir lacunas. As adotadas foram estas:
 9. **Porta do Pedido configurável** com `PEDIDO_PORT`, mantendo 8080 como padrão.
 10. A mensagem de 404 foi padronizada como `Produto inexistente`. O `?` do enunciado foi tratado como erro de digitação.
 
----
-
 ## Parte 2. Código-fonte
 
 | Serviço | Pasta | Principais classes |
@@ -137,33 +134,24 @@ eventos e das requisições HTTP.
 O arquivo completo está em `docker-compose.yml`, na raiz do projeto. Ele segue a configuração do
 enunciado, com a indentação corrigida e os itens 7, 8 e 9 da lista de modificações.
 
----
-
 ## Parte 4. Prints
 
-Capturas a anexar, com o comando ou a tela que gera cada uma:
+### Print 1: Criação do pedido
+![](/prints/1_criacao_pedidos.png)
 
-| Print | Onde obter |
-|---|---|
-| Criação do pedido | `POST /pedidos` no Postman ou Insomnia, com resposta 201 e `AGUARDANDO_PAGAMENTO` |
-| Reserva de estoque | `GET /produtos/1` antes e depois, e o log `Produto 1 reservado` do estoque-service |
-| Publicação da mensagem | RabbitMQ em http://localhost:15672, aba Queues, fila `pedido.criado`, e o log `Evento publicado` |
-| Processamento do pagamento | log `Pagamento aprovado` do pagamento-service, tabela `pagamento` e `GET /pedidos/{id}` com `PAGO` |
+### Print 2: Reserva de estoque
 
-Evidência textual de uma execução, filtrada pelo mesmo correlationId nos três serviços:
+#### Antes:
+![](/prints/2_reserva_estoque_antes.png)
 
-```text
-18:16:01.838 [pedido-service]    correlationId=968ce8a2-… Solicitação de pedido recebida: produto 1 quantidade 2
-18:16:01.973 [estoque-service]   correlationId=968ce8a2-… Produto 1 reservado
-18:16:02.164 [pedido-service]    correlationId=968ce8a2-… Pedido 1 criado
-18:16:02.254 [pedido-service]    correlationId=968ce8a2-… Evento publicado 1
-18:16:03.298 [pagamento-service] correlationId=968ce8a2-… Evento pedido.criado recebido 1
-18:16:04.732 [pagamento-service] correlationId=968ce8a2-… Pagamento aprovado 1
-18:16:04.828 [pagamento-service] correlationId=968ce8a2-… Evento pagamento.processado publicado 1 (APROVADO)
-18:16:04.906 [pedido-service]    correlationId=968ce8a2-… Pedido 1 atualizado para PAGO (pagamento APROVADO)
-```
+#### Depois:
+![](prints/2_reserva_estoque_depois.png)
 
----
+### Print 3: Publicação da mensagem
+![](prints/3_publicacao_mensagem_rabbitmq.png)
+
+### Print 4: Processamento do pagamento
+![](prints/4_processamento_pagamento.png)
 
 ## Parte 5. Respostas
 
@@ -188,47 +176,35 @@ A falha foi simulada com `POST /pedidos?simularFalha=true`. O serviço lança um
 o Estoque confirma a reserva e antes de gravar o pedido.
 
 ```text
-Teclado antes:                          20
-Falha SEM compensação  -> HTTP 500      Teclado: 19   pedidos novos: 0
-Falha COM compensação  -> HTTP 500      Teclado: 19 -> 18 -> 19 (reserva desfeita)
+Teclado antes: 20
+Falha SEM compensação -> HTTP 500 | Teclado: 19   pedidos novos: 0
+Falha COM compensação -> HTTP 500 | Teclado: 19 -> 18 -> 19 (reserva desfeita)
 ```
 
 **1. O que aconteceu com o estoque?**
-A quantidade caiu de 20 para 19 e ficou assim. A reserva foi confirmada no banco do Estoque antes
-da falha, e nada a desfez.
+A quantidade caiu de 20 para 19 e ficou assim. A reserva foi confirmada no banco do Estoque antes da falha, e nada a desfez.
 
 **2. O pedido foi criado?**
-Não. O cliente recebeu HTTP 500 e `GET /pedidos` não mostra pedido novo. O resultado é uma
-inconsistência: uma unidade reservada sem pedido correspondente.
+Não. O cliente recebeu HTTP 500 e `GET /pedidos` não mostra pedido novo. O resultado é uma inconsistência: uma unidade reservada sem pedido correspondente.
 
 **3. Existe uma transação única envolvendo os dois serviços?**
-Não. Cada serviço tem o seu banco e faz commit da sua transação local. A chamada REST confirma a
-reserva no `estoque-db` de forma independente da gravação no `pedido-db`. Por isso o método
-`criar` do Pedido não é `@Transactional`: não existe transação que abranja os dois bancos. Uma
-transação distribuída, como o two-phase commit, acoplaria os serviços e reduziria a
-disponibilidade, por isso não é usada em microsserviços.
+Não. Cada serviço tem o seu banco e faz commit da sua transação local. A chamada REST confirma a reserva no `estoque-db` de forma independente da gravação no `pedido-db`. Por isso o método `criar` do Pedido não é `@Transactional`: não existe transação que abranja os dois bancos. Uma transação distribuída, como o two-phase commit, acoplaria os serviços e reduziria a disponibilidade, por isso não é usada em microsserviços.
 
 **4. Como o sistema poderia desfazer a reserva realizada?**
-Executando uma operação de compensação, que é a ação inversa da reserva. Aqui ela é o
-`PUT /produtos/{id}/liberar`, que devolve a quantidade. O Pedido Service a chama sempre que a
-gravação do pedido falha depois da reserva. No experimento, ela é ativada com `compensar=true`, e o
-log registra `Compensação executada: reserva do produto 3 desfeita`.
+Executando uma operação de compensação, que é a ação inversa da reserva. Aqui ela é o `PUT /produtos/{id}/liberar`, que devolve a quantidade. O Pedido Service a chama sempre que a gravação do pedido falha depois da reserva. No experimento, ela é ativada com `compensar=true`, e o log registra `Compensação executada: reserva do produto 3 desfeita`.
 
 **5. Que mecanismo poderia ser utilizado para realizar essa compensação?**
-O padrão **Saga**: uma sequência de transações locais em que cada passo tem uma transação
-compensatória. Há duas variantes:
+O padrão **Saga**: uma sequência de transações locais em que cada passo tem uma transação compensatória. Há duas variantes:
 
 - **Orquestração.** Um coordenador, aqui o Pedido Service, chama os passos e as compensações. É a variante implementada.
 - **Coreografia.** Os serviços reagem a eventos. Por exemplo, um evento `pedido.falhou` faria o Estoque liberar a reserva.
 
-Para a compensação não se perder se o próprio Pedido cair, ela pode ser registrada no banco e
-enviada pelo padrão **Transactional Outbox**. Outra proteção é dar prazo de expiração às reservas.
+Para a compensação não se perder se o próprio Pedido cair, ela pode ser registrada no banco e enviada pelo padrão **Transactional Outbox**. Outra proteção é dar prazo de expiração às reservas.
 
 ### Etapa 4. Docker Compose
 
 **O Pedido consegue acessar o Estoque?**
-Sim. O Pedido chama `http://estoque-service:8080`, nome resolvido pelo DNS da rede do Compose. A
-evidência é o mesmo correlationId nos dois logs:
+Sim. O Pedido chama `http://estoque-service:8080`, nome resolvido pelo DNS da rede do Compose. A evidência é o mesmo correlationId nos dois logs:
 
 ```text
 [pedido-service]  correlationId=968ce8a2-… Solicitação de pedido recebida: produto 1 quantidade 2
@@ -237,27 +213,19 @@ evidência é o mesmo correlationId nos dois logs:
 
 ### Etapa 5. RabbitMQ
 
-Na interface de gerenciamento aparecem o exchange `pedidos.exchange`, do tipo direct e durável, e a
-fila `pedido.criado` ligada a ele pela routing key `pedido.criado`. Com o sistema normal, a fila fica
-com 0 mensagens prontas e 1 consumidor. Com o Pagamento parado, ela acumula mensagens e mostra 0
-consumidores. Com o Pagamento escalado, mostra 2 consumidores.
+Na interface de gerenciamento aparecem o exchange `pedidos.exchange`, do tipo direct e durável, e a fila `pedido.criado` ligada a ele pela routing key `pedido.criado`. Com o sistema normal, a fila fica com 0 mensagens prontas e 1 consumidor. Com o Pagamento parado, ela acumula mensagens e mostra 0 consumidores. Com o Pagamento escalado, mostra 2 consumidores.
 
 **1. Por que o Pedido Service publica em um Exchange em vez de enviar diretamente para uma Queue?**
-Para desacoplar o produtor dos consumidores. O Pedido só conhece o exchange e a routing key. Quais
-filas recebem a mensagem é decidido pelos bindings no broker. Assim, um novo interessado, como um
-serviço de notificação ou de nota fiscal, pode criar a própria fila e ligá-la ao exchange sem
-nenhuma alteração no Pedido. O exchange também permite trocar a regra de roteamento, entregar a
-várias filas e usar dead-lettering.
+Para desacoplar o produtor dos consumidores. O Pedido só conhece o exchange e a routing key. Quais filas recebem a mensagem é decidido pelos bindings no broker. Assim, um novo interessado, como um serviço de notificação ou de nota fiscal, pode criar a própria fila e ligá-la ao exchange sem nenhuma alteração no Pedido. O exchange também permite trocar a regra de roteamento, entregar a várias filas e usar dead-lettering.
 
 **2. Qual é a diferença entre Exchange, Queue e Consumer?**
 
-- **Exchange** é o ponto de entrada. Recebe a mensagem e a encaminha para filas conforme o tipo e os bindings. Não armazena nada.
-- **Queue** é o buffer. Guarda as mensagens, de forma durável aqui, até que um consumidor as receba e confirme.
-- **Consumer** é a aplicação que assina uma fila, processa cada mensagem e envia o ack. Aqui é o `@RabbitListener` do Pagamento.
+- **Exchange**: Ponto de entrada, recebe a mensagem e a encaminha para filas conforme o tipo e os bindings. Não armazena nada.
+- **Queue**: Buffer, guarda as mensagens, de forma durável aqui, até que um consumidor as receba e confirme.
+- **Consumer**: Aplicação que assina uma fila, processa cada mensagem e envia o ack. Aqui é o `@RabbitListener` do Pagamento.
 
 **3. O Pedido Service sabe quem consumirá o evento?**
-Não. Ele não conhece o Pagamento, nem quantas instâncias existem, nem se há alguém consumindo no
-momento. Isso fica evidente na Etapa 8: o Pedido publica normalmente com o Pagamento desligado.
+Não. Ele não conhece o Pagamento, nem quantas instâncias existem, nem se há alguém consumindo no momento. Isso fica evidente na Etapa 8: o Pedido publica normalmente com o Pagamento desligado.
 
 ### Etapa 7. Teste funcional
 
@@ -291,13 +259,10 @@ Sim. Os três pedidos receberam 201 com status `AGUARDANDO_PAGAMENTO`.
 Sim. O Mouse passou de 49 para 46, porque a reserva depende só do Estoque, que estava no ar.
 
 **3. O sistema inteiro parou?**
-Não. Apenas o processamento de pagamentos ficou pausado. Pedido e Estoque continuaram respondendo,
-porque a dependência do Pagamento é assíncrona.
+Não. Apenas o processamento de pagamentos ficou pausado. Pedido e Estoque continuaram respondendo, porque a dependência do Pagamento é assíncrona.
 
 **4. A mensagem foi perdida?**
-Não. A fila `pedido.criado` mostra 3 mensagens prontas e 0 consumidores. O log do Pedido mostra
-`Evento publicado 2`, `3` e `4`, e o log do Pagamento não tem nenhuma linha para esses pedidos. A
-fila é durável e as mensagens são persistentes, então elas aguardam o consumidor.
+Não. A fila `pedido.criado` mostra 3 mensagens prontas e 0 consumidores. O log do Pedido mostra `Evento publicado 2`, `3` e `4`, e o log do Pagamento não tem nenhuma linha para esses pedidos. A fila é durável e as mensagens são persistentes, então elas aguardam o consumidor.
 
 ### Etapa 9. Recuperação
 
@@ -322,13 +287,10 @@ uma vez e os registros estão no banco do Pagamento.
 Não. Ao reconectar, o consumidor recebeu sozinho as mensagens pendentes.
 
 **2. O Pedido Service precisou aguardar o Pagamento Service?**
-Não. Ele respondeu 201 na hora, mesmo com o Pagamento fora do ar. Esse é o desacoplamento temporal
-da comunicação assíncrona.
+Não. Ele respondeu 201 na hora, mesmo com o Pagamento fora do ar. Esse é o desacoplamento temporal da comunicação assíncrona.
 
 **3. O que aconteceu com as mensagens enquanto o consumidor estava indisponível?**
-Ficaram armazenadas na fila durável `pedido.criado`, no estado Ready. Mensagens persistentes também
-sobrevivem a um reinício do broker. Como o ack só é enviado depois do processamento, uma mensagem
-só sai da fila quando o pagamento já foi gravado.
+Ficaram armazenadas na fila durável `pedido.criado`, no estado Ready. Mensagens persistentes também sobrevivem a um reinício do broker. Como o ack só é enviado depois do processamento, uma mensagem só sai da fila quando o pagamento já foi gravado.
 
 ### Etapa 10. Escalabilidade
 
@@ -351,41 +313,27 @@ pagamento: 24 registros para 24 pedidos distintos
 ```
 
 **As mensagens foram distribuídas?**
-Sim. O RabbitMQ entregou em rodízio, alternando entre as instâncias, 5 para cada. O `prefetch: 1`
-faz cada instância receber uma mensagem por vez, o que mantém a divisão justa.
+Sim. O RabbitMQ entregou em rodízio, alternando entre as instâncias, 5 para cada. O `prefetch: 1` faz cada instância receber uma mensagem por vez, o que mantém a divisão justa.
 
 **Apenas uma instância processou cada mensagem?**
-Sim. Os consumidores de uma mesma fila competem entre si, e cada mensagem é entregue a um só deles.
-O banco tem 24 pagamentos para 24 pedidos distintos, sem duplicatas. O índice único em `pedido_id`
-protege também contra reentregas.
+Sim. Os consumidores de uma mesma fila competem entre si, e cada mensagem é entregue a um só deles. O banco tem 24 pagamentos para 24 pedidos distintos, sem duplicatas. O índice único em `pedido_id` protege também contra reentregas.
 
 **Que características permitem escalar só o Pagamento?**
 
-- **Serviço sem estado.** Nenhuma instância guarda dados em memória entre mensagens. O estado fica no `pagamento-db`.
-- **Comunicação assíncrona por fila.** As instâncias se conectam à mesma fila e o broker reparte o trabalho. Ninguém precisa saber quantas instâncias existem.
-- **Implantação independente.** Cada serviço tem imagem, configuração e banco próprios, e escalar um não afeta os outros.
-- **Sem porta publicada no host.** O Pagamento usa `expose` em vez de `ports`, então réplicas não disputam a mesma porta.
-- **Idempotência e reserva atômica.** Instâncias concorrentes não corrompem os dados.
+- **Serviço sem estado**: Nenhuma instância guarda dados em memória entre mensagens. O estado fica no `pagamento-db`.
+- **Comunicação assíncrona por fila**: As instâncias se conectam à mesma fila e o broker reparte o trabalho. Ninguém precisa saber quantas instâncias existem.
+- **Implantação independente**: Cada serviço tem imagem, configuração e banco próprios, e escalar um não afeta os outros.
+- **Sem porta publicada no host**: O Pagamento usa `expose` em vez de `ports`, então réplicas não disputam a mesma porta.
+- **Idempotência e reserva atômica**: Instâncias concorrentes não corrompem os dados.
 
 **Em quais circunstâncias o Estoque também precisaria ser escalado?**
-Quando ele vira gargalo da parte síncrona. Cada `POST /pedidos` espera a resposta do Estoque, então
-um pico de pedidos, como em uma Black Friday, ou um aumento de consultas a `/produtos` aumenta a
-latência do Estoque e pode estourar o timeout do Pedido. Isso também acontece quando o Pedido é
-escalado, porque a carga sobre o Estoque cresce na mesma proporção. Outro motivo é disponibilidade:
-com uma única instância, a queda do Estoque impede a criação de pedidos. A reserva é atômica no
-banco, então várias instâncias do Estoque são seguras. Seriam necessários um balanceador de carga e
-a remoção da porta fixa.
+Quando ele vira gargalo da parte síncrona. Cada `POST /pedidos` espera a resposta do Estoque, então um pico de pedidos, como em uma Black Friday, ou um aumento de consultas a `/produtos` aumenta a latência do Estoque e pode estourar o timeout do Pedido. Isso também acontece quando o Pedido é escalado, porque a carga sobre o Estoque cresce na mesma proporção. Outro motivo é disponibilidade: com uma única instância, a queda do Estoque impede a criação de pedidos. A reserva é atômica no banco, então várias instâncias do Estoque são seguras. Seriam necessários um balanceador de carga e a remoção da porta fixa.
 
 ### Etapa 11. Observabilidade e investigação de incidente
 
-O Pedido Service gera um `UUID.randomUUID()` por requisição. Ele vai no cabeçalho
-`X-Correlation-Id` para o Estoque e no campo `correlationId` dos eventos para o Pagamento, que o
-repassa no evento `pagamento.processado`. Todos os logs pedidos no enunciado foram implementados no
-formato `correlationId={} …`.
+O Pedido Service gera um `UUID.randomUUID()` por requisição. Ele vai no cabeçalho `X-Correlation-Id` para o Estoque e no campo `correlationId` dos eventos para o Pagamento, que o repassa no evento `pagamento.processado`. Todos os logs pedidos no enunciado foram implementados no formato `correlationId={} …`.
 
-**Reprodução do incidente.** O Pagamento foi iniciado com `SIMULACAO_FALHA_PEDIDO_ID=17`, que simula
-falha do gateway de pagamento para esse pedido, e foram criados 18 pedidos. O usuário relata que o
-Pedido #17 não foi concluído:
+**Reprodução do incidente.** O Pagamento foi iniciado com `SIMULACAO_FALHA_PEDIDO_ID=17`, que simula falha do gateway de pagamento para esse pedido, e foram criados 18 pedidos. O usuário relata que o Pedido #17 não foi concluído:
 
 ```text
 GET /pedidos/17 -> {"id":17,"produtoId":2,"quantidade":1,"status":"AGUARDANDO_PAGAMENTO"}
@@ -427,8 +375,7 @@ $ SELECT count(*) FROM pagamento WHERE pedido_id = 17;
 Sim. O log tem `Pedido 17 criado` e `GET /pedidos/17` devolve o pedido com `AGUARDANDO_PAGAMENTO`.
 
 **2. O estoque foi reservado?**
-Sim. O log do estoque-service tem `Produto 2 reservado` com o mesmo correlationId, 19 ms antes da
-criação do pedido.
+Sim. O log do estoque-service tem `Produto 2 reservado` com o mesmo correlationId, 19 ms antes da criação do pedido.
 
 **3. O evento pedido.criado foi publicado?**
 Sim. O log tem `Evento publicado 17` no pedido-service.
@@ -437,24 +384,16 @@ Sim. O log tem `Evento publicado 17` no pedido-service.
 Sim, três vezes. São a entrega original e duas retentativas, todas com `Evento pedido.criado recebido 17`.
 
 **5. O pagamento foi processado?**
-Não. Não existe `Pagamento aprovado 17` nem `Pagamento rejeitado 17`, não há linha na tabela
-`pagamento` e o evento `pagamento.processado` não foi publicado. Por isso o Pedido nunca registrou
-`Pedido 17 atualizado`.
+Não. Não existe `Pagamento aprovado 17` nem `Pagamento rejeitado 17`, não há linha na tabela `pagamento` e o evento `pagamento.processado` não foi publicado. Por isso o Pedido nunca registrou `Pedido 17 atualizado`.
 
 **6. Em qual etapa ocorreu o problema?**
-No processamento do pagamento, dentro do Pagamento Service, depois de receber o evento e antes de
-gravar o pagamento. Criação do pedido, reserva e publicação funcionaram.
+No processamento do pagamento, dentro do Pagamento Service, depois de receber o evento e antes de gravar o pagamento. Criação do pedido, reserva e publicação funcionaram.
 
 **7. Qual evidência nos logs permite identificar a etapa da falha?**
-A última linha de sucesso da cadeia é `Evento pedido.criado recebido 17`. Logo depois vêm três
-linhas `ERROR … Falha ao processar pagamento 17` e o aviso `Retries exhausted`. No Pedido, a última
-linha é `Evento publicado 17`, e a atualização de status nunca aparece. Seguir o correlationId pelos
-três serviços mostra exatamente onde a cadeia parou.
+A última linha de sucesso da cadeia é `Evento pedido.criado recebido 17`. Logo depois vêm três linhas `ERROR … Falha ao processar pagamento 17` e o aviso `Retries exhausted`. No Pedido, a última linha é `Evento publicado 17`, e a atualização de status nunca aparece. Seguir o correlationId pelos três serviços mostra exatamente onde a cadeia parou.
 
 **8. O que aconteceu com a mensagem no RabbitMQ?**
-Ela não se perdeu. Depois de 3 tentativas, o consumidor a rejeitou sem recolocá-la na fila, e o
-broker a desviou via `dlx.exchange` para a `pedido.criado.dlq`, com o conteúdo e o correlationId
-intactos. A fila principal ficou livre, então os pedidos 18 em diante foram processados
+Ela não se perdeu. Depois de 3 tentativas, o consumidor a rejeitou sem recolocá-la na fila, e o broker a desviou via `dlx.exchange` para a `pedido.criado.dlq`, com o conteúdo e o correlationId intactos. A fila principal ficou livre, então os pedidos 18 em diante foram processados
 normalmente.
 
 **Resolução.** Corrigida a causa, isto é, com o Pagamento reiniciado sem a simulação, a mensagem foi
@@ -472,9 +411,7 @@ Esse trecho é de uma segunda execução, por isso o correlationId é outro.
 
 ### Etapa 12. Atualização assíncrona do pedido
 
-O Pagamento publica `pagamento.processado` com `pedidoId`, `status` e `correlationId`. O Pedido
-consome o evento e atualiza o próprio banco: `APROVADO` vira `PAGO` e `REJEITADO` vira `REJEITADO`.
-O Pagamento nunca acessa o `pedido-db`.
+O Pagamento publica `pagamento.processado` com `pedidoId`, `status` e `correlationId`. O Pedido consome o evento e atualiza o próprio banco: `APROVADO` vira `PAGO` e `REJEITADO` vira `REJEITADO`. O Pagamento nunca acessa o `pedido-db`.
 
 Resultado com pagamentos aprovados e rejeitados, consultando cada banco pelo seu próprio serviço:
 

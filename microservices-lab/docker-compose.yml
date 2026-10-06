@@ -5,6 +5,9 @@ services:
     # e volume nomeado, filas duráveis e mensagens persistentes sobrevivem à recriação
     # do container (sem isso, cada container novo "esquece" as mensagens pendentes).
     hostname: rabbitmq
+    # Tempo para o RabbitMQ gravar o Mnesia ao parar. O padrão do Docker (10s e SIGKILL)
+    # pode corromper o diretório de dados (erro schema_integrity_check_failed no boot).
+    stop_grace_period: 1m
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     ports:
