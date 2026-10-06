@@ -14,72 +14,12 @@ As evidências textuais deste relatório são saídas reais de execuções do si
 ---
 
 ## Parte 1. Diagrama da arquitetura
+![](/docs/diagramas/diagrama_arquitetura.png)
 
-```mermaid
-flowchart LR
-    C([Cliente<br/>Postman / cURL])
-
-    subgraph PED[Pedido Service :8080]
-        P[API /pedidos]
-    end
-    subgraph EST[Estoque Service :8081]
-        E[API /produtos]
-    end
-    subgraph PAG[Pagamento Service<br/>N instâncias]
-        G[Consumidor pedido.criado]
-    end
-
-    PDB[(pedido-db)]
-    EDB[(estoque-db)]
-    GDB[(pagamento-db)]
-
-    subgraph MQ[RabbitMQ]
-        X1{{pedidos.exchange}} -- pedido.criado --> Q1[[fila pedido.criado]]
-        X2{{pagamentos.exchange}} -- pagamento.processado --> Q2[[fila pagamento.processado]]
-        DLX{{dlx.exchange}} --> DLQ[[filas *.dlq]]
-    end
-
-    C -- "1. POST /pedidos" --> P
-    P -- "2. PUT /produtos/{id}/reservar (REST síncrono)" --> E
-    E --- EDB
-    P -- "3. grava AGUARDANDO_PAGAMENTO" --- PDB
-    P -- "4. publica pedido.criado" --> X1
-    Q1 -- "5. consome" --> G
-    G --- GDB
-    G -- "6. publica pagamento.processado" --> X2
-    Q2 -- "7. consome e atualiza para PAGO / REJEITADO" --> P
-    Q1 -. "falha após 3 tentativas" .-> DLX
-```
 
 **Fluxo de um pedido**
+![](/docs/diagramas/diagrama_fluxo_pedido.png)
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Cliente
-    participant Pedido as Pedido Service
-    participant Estoque as Estoque Service
-    participant MQ as RabbitMQ
-    participant Pagamento as Pagamento Service
-
-    Cliente->>Pedido: POST /pedidos {produtoId, quantidade}
-    Note over Pedido: gera correlationId (UUID)
-    Pedido->>Estoque: PUT /produtos/{id}/reservar + X-Correlation-Id
-    alt sem estoque ou produto inexistente
-        Estoque-->>Pedido: 409 ou 404
-        Pedido-->>Cliente: 409 ou 404 (sem pedido e sem evento)
-    else estoque reservado
-        Estoque-->>Pedido: 200
-        Pedido->>Pedido: grava pedido AGUARDANDO_PAGAMENTO
-        Pedido->>MQ: pedidos.exchange / pedido.criado
-        Pedido-->>Cliente: 201 Created
-        MQ->>Pagamento: entrega pedido.criado
-        Pagamento->>Pagamento: sorteia 80% APROVADO / 20% REJEITADO e grava
-        Pagamento->>MQ: pagamentos.exchange / pagamento.processado
-        MQ->>Pedido: entrega pagamento.processado
-        Pedido->>Pedido: status PAGO ou REJEITADO
-    end
-```
 
 **Isolamento dos dados.** Cada serviço tem o seu próprio PostgreSQL, com usuário e senha próprios,
 e só recebe a URL do próprio banco no `docker-compose.yml`. O Pedido conhece o Estoque apenas pela
@@ -137,21 +77,21 @@ enunciado, com a indentação corrigida e os itens 7, 8 e 9 da lista de modifica
 ## Parte 4. Prints
 
 ### Print 1: Criação do pedido
-![](/prints/1_criacao_pedidos.png)
+![](/docs/prints/1_criacao_pedidos.png)
 
 ### Print 2: Reserva de estoque
 
 #### Antes:
-![](/prints/2_reserva_estoque_antes.png)
+![](/docs/prints/2_reserva_estoque_antes.png)
 
 #### Depois:
-![](prints/2_reserva_estoque_depois.png)
+![](/docs/prints/2_reserva_estoque_depois.png)
 
 ### Print 3: Publicação da mensagem
-![](prints/3_publicacao_mensagem_rabbitmq.png)
+![](/docs/prints/3_publicacao_mensagem_rabbitmq.png)
 
 ### Print 4: Processamento do pagamento
-![](prints/4_processamento_pagamento.png)
+![](/docs/prints/4_processamento_pagamento.png)
 
 ## Parte 5. Respostas
 
